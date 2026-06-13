@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tile icon playground</title>
+<!-- Lucide from CDN so the glyphs are the REAL icon set, not hand-drawn paths.
+     The eventual serve.py impl embeds just the chosen subset's path data. -->
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  :root {
+    --bg:#0b0e14; --panel:#11151c; --border:#222a35; --fg:#c9d1d9;
+    --muted:#6b7685; --accent:#7aa2f7;
+    /* kind colours, lifted verbatim from serve.py badge rules */
+    --host:#7ee787; --container:#79c0ff; --terminal:#f7c97a;
+    --container-terminal:#7ed1c4; --opencode:#f78a8a; --channel:#f0b54e;
+    --webview:#d18cf7;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:var(--bg); color:var(--fg);
+    font:13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  body { padding:20px 24px 60px; }
+  h1 { font-size:15px; font-weight:600; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:12px; margin:0 0 18px; }
+
+  .controls { display:flex; flex-wrap:wrap; gap:18px 28px; align-items:flex-start;
+    background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:14px 16px; margin-bottom:22px; }
+  .ctl { display:flex; flex-direction:column; gap:6px; }
+  .ctl > label.cap { font-size:10px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--muted); }
+  .ctl .opts { display:flex; gap:14px; flex-wrap:wrap; }
+  .ctl .opts label { display:flex; align-items:center; gap:5px; font-size:12px;
+    cursor:pointer; color:var(--fg); }
+  input[type=range] { width:140px; accent-color:var(--accent); }
+  .titles { flex:1 1 280px; min-width:260px; }
+  textarea { width:100%; height:120px; resize:vertical; background:#0d1117;
+    color:var(--fg); border:1px solid var(--border); border-radius:6px;
+    padding:8px 10px; font:12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* tile-header mock — mirrors serve.py .head / .dot / .name / .cwd */
+  .grid { display:flex; flex-direction:column; gap:0; border:1px solid var(--border);
+    border-radius:8px; overflow:hidden; max-width:680px; }
+  .head { display:flex; align-items:center; gap:8px; padding:7px 10px;
+    background:var(--panel); border-bottom:1px solid var(--border); }
+  .head:last-child { border-bottom:none; }
+  .dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  .icon { flex:0 0 auto; display:grid; place-items:center; }
+  .icon svg { display:block; }
+  .badge { font-size:10px; padding:1px 6px; border-radius:10px; border:1px solid;
+    flex:0 0 auto; opacity:.9; }
+  .name { color:var(--fg); font-weight:500; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; }
+  .cwd { color:var(--muted); font-size:11px; margin-left:auto; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:38%; }
+
+  /* monogram block inside an identicon */
+  .mono { font-weight:700; font-family:ui-monospace, SFMono-Regular, Menlo, monospace;
+    color:#0b0e14; line-height:1; }
+  .footer { color:var(--muted); font-size:11px; margin-top:18px; max-width:680px; }
+  code { background:#0d1117; border:1px solid var(--border); border-radius:4px;
+    padding:1px 4px; font-size:11px; }
+</style>
+</head>
+<body>
+  <h1>Tile icon playground</h1>
+  <p class="sub">Side-by-side of the four icon ideas on real session titles. Edit the list, flip the controls, judge it at tile size.</p>
+
+  <div class="controls">
+    <div class="ctl">
+      <label class="cap">Variant</label>
+      <div class="opts" id="variant">
+        <label><input type="radio" name="variant" value="identicon" checked> Identicon</label>
+        <label><input type="radio" name="variant" value="identicon-mono"> Identicon + monogram</label>
+        <label><input type="radio" name="variant" value="lucide-keyword"> Lucide (keyword map)</label>
+        <label><input type="radio" name="variant" value="lucide-ai"> Lucide (AI pick)</label>
+      </div>
+    </div>
+    <div class="ctl">
+      <label class="cap">Colour from</label>
+      <div class="opts" id="colorsrc">
+        <label><input type="radio" name="colorsrc" value="hue" checked> Hash &rarr; hue</label>
+        <label><input type="radio" name="colorsrc" value="palette"> 4-colour palette</label>
+        <label><input type="radio" name="colorsrc" value="kind"> Kind</label>
+      </div>
+    </div>
+    <div class="ctl">
+      <label class="cap">Size <span id="sizeval">18</span>px</label>
+      <input type="range" id="size" min="12" max="28" value="18">
+    </div>
+    <div class="ctl titles">
+      <label class="cap">Session titles &mdash; <code>title | kind | cwd</code> (kind/cwd optional)</label>
+      <textarea id="titles"></textarea>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <p class="footer">
+    Identicon = 5&times;5 symmetric grid from an FNV-1a hash (the same hash <code>serve.py</code> already uses for tile colour).
+    Keyword map = regex on the title, instant &amp; offline. AI pick = what the Anthropic fallback would choose from the curated Lucide set, simulated here for the sample titles.
+    All glyphs are real Lucide icons via CDN.
+  </p>
+
+<script>
+/* ---- defaults: a representative slice of the user's real sessions ---- */
+const DEFAULT_TITLES = [
+  "session-dashboard | host | ~/dev/vibe/session-dashboard",
+  "crypto-cmt | host | ~/dev/crypto-cmt",
+  "crypto-jnb | container | ~/dev/crypto-jnb",
+  "aptcheck-test | terminal | ~/dev/aptcheck-test",
+  "claude — myrepo | host | ~/dev/myrepo",
+  "▲ stm32 build | terminal | ~/dev/firmware",
+  "sh-box | container-terminal | ~/dev/crypto-cmt",
+  "opencode | opencode | ~/dev/vibe",
+  "#general | channel |",
+  "localhost:5173 | webview |",
+];
+document.getElementById('titles').value = DEFAULT_TITLES.join('\n');
+
+/* ---- FNV-1a, identical to serve.py tileTitleColor ---- */
+function fnv(str) {
+  let h = 2166136261 >>> 0;
+  const s = String(str || '');
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return h >>> 0;
+}
+
+const PALETTE = ['#03AED2', '#F8DE22', '#F45B26', '#D12052'];
+const KIND_COLOR = {
+  host:'#7ee787', container:'#79c0ff', terminal:'#f7c97a',
+  'container-terminal':'#7ed1c4', opencode:'#f78a8a', channel:'#f0b54e', webview:'#d18cf7',
+};
+
+function colorFor(seed, kind, src) {
+  if (src === 'palette') return PALETTE[fnv(seed) % PALETTE.length];
+  if (src === 'kind')    return KIND_COLOR[kind] || '#7ee787';
+  const hue = fnv(seed) % 360;                 // full-spectrum, deterministic
+  return `hsl(${hue} 62% 62%)`;
+}
+
+/* ---- the meaningful token + initials for monograms ---- */
+function meaningfulToken(title) {
+  let t = String(title).replace(/^[^\p{L}\p{N}]+/u, '').trim();   // drop leading ▲ # etc
+  // path? take the basename
+  if (t.includes('/')) { const segs = t.split('/').filter(Boolean); t = segs[segs.length - 1] || t; }
+  // "claude — myrepo" → prefer the part after a separator
+  const dash = t.split(/\s+[—–-]\s+/);
+  if (dash.length > 1) t = dash[dash.length - 1].trim();
+  return t;
+}
+function initials(title) {
+  const t = meaningfulToken(title).replace(/[^A-Za-z0-9 _.-]/g, ' ').trim();
+  const parts = t.split(/[\s_.-]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return '??';
+}
+
+/* ---- identicon: 5x5 symmetric, left 3 cols mirrored ---- */
+function identicon(seed, color, size, withMono, title) {
+  const h = fnv(seed);
+  const cells = 5, pad = Math.round(size * 0.10), inner = size - pad * 2;
+  const c = inner / cells;
+  let rects = '';
+  for (let x = 0; x < 3; x++) {
+    for (let y = 0; y < 5; y++) {
+      if ((h >> (x * 5 + y)) & 1) {
+        for (const xx of (x === 2 ? [2] : [x, 4 - x])) {
+          rects += `<rect x="${(pad + xx * c).toFixed(2)}" y="${(pad + y * c).toFixed(2)}" width="${c.toFixed(2)}" height="${c.toFixed(2)}"/>`;
+        }
+      }
+    }
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'icon';
+  wrap.style.width = wrap.style.height = size + 'px';
+  if (withMono) {
+    // tinted square background + identicon faint + centered initials
+    wrap.innerHTML =
+      `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="position:absolute">` +
+        `<rect width="${size}" height="${size}" rx="${(size*0.22).toFixed(1)}" fill="${color}"/>` +
+        `<g fill="rgba(0,0,0,0.18)">${rects}</g>` +
+      `</svg>` +
+      `<span class="mono" style="position:relative;font-size:${(size*0.5).toFixed(1)}px">${initials(title)}</span>`;
+    wrap.style.position = 'relative';
+    wrap.style.display = 'grid';
+  } else {
+    wrap.innerHTML =
+      `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+        `<rect width="${size}" height="${size}" rx="${(size*0.22).toFixed(1)}" fill="rgba(255,255,255,0.04)"/>` +
+        `<g fill="${color}">${rects}</g>` +
+      `</svg>`;
+  }
+  return wrap;
+}
+
+/* ---- keyword map: regex on the title → Lucide name (instant, offline) ---- */
+const KEYWORD_MAP = [
+  [/dash|board/i, 'layout-dashboard'],
+  [/crypto|coin|btc|eth|trade/i, 'coins'],
+  [/jnb|notebook|jupyter|ipynb/i, 'notebook-text'],
+  [/apt|pkg|package|deb|dpkg/i, 'package'],
+  [/test|spec|check/i, 'flask-conical'],
+  [/build|make|compile|cargo/i, 'hammer'],
+  [/stm32|mcu|firmware|embed|arm/i, 'cpu'],
+  [/opencode|claude|llm|\bai\b|bot|agent/i, 'bot'],
+  [/box|container|podman|docker/i, 'box'],
+  [/channel|chat|#|msg|message/i, 'message-square'],
+  [/git|repo/i, 'git-branch'],
+  [/db|sql|postgres|sqlite|database/i, 'database'],
+  [/web|http|localhost|:\d{2,5}\b/i, 'globe'],
+  [/server|serve|api|host/i, 'server'],
+  [/shell|term|\bsh\b|bash|zsh/i, 'terminal'],
+];
+function keywordIcon(title, cwd) {
+  const hay = (title + ' ' + (cwd || ''));
+  for (const [re, name] of KEYWORD_MAP) if (re.test(hay)) return name;
+  return 'terminal';
+}
+
+/* ---- "AI pick": what the Anthropic fallback would choose, simulated for the
+        sample titles. Falls back to the keyword map for anything unlisted. ---- */
+const AI_MAP = {
+  'session-dashboard':'layout-dashboard',
+  'crypto-cmt':'coins',
+  'crypto-jnb':'candlestick-chart',   // crypto + notebook → chart, smarter than keyword
+  'aptcheck-test':'package-check',
+  'myrepo':'bot',
+  'stm32 build':'cpu',
+  'sh-box':'box',
+  'opencode':'code',
+  'general':'hash',
+  'localhost:5173':'globe',
+};
+function aiIcon(title, cwd) {
+  const key = meaningfulToken(title);
+  if (AI_MAP[key]) return AI_MAP[key];
+  // try the cleaned raw title too
+  const raw = String(title).replace(/^[^\p{L}\p{N}]+/u,'').trim();
+  if (AI_MAP[raw]) return AI_MAP[raw];
+  return keywordIcon(title, cwd);
+}
+
+function lucideIcon(name, color, size) {
+  const wrap = document.createElement('div');
+  wrap.className = 'icon';
+  wrap.style.width = wrap.style.height = size + 'px';
+  wrap.style.color = color;
+  const i = document.createElement('i');
+  i.setAttribute('data-lucide', name);
+  i.style.width = i.style.height = size + 'px';
+  wrap.appendChild(i);
+  return wrap;
+}
+
+/* ---- render ---- */
+function parseLine(line) {
+  const [title, kind, cwd] = line.split('|').map(s => (s || '').trim());
+  return { title, kind: kind || 'host', cwd: cwd || '' };
+}
+
+function render() {
+  const variant = document.querySelector('input[name=variant]:checked').value;
+  const colorsrc = document.querySelector('input[name=colorsrc]:checked').value;
+  const size = +document.getElementById('size').value;
+  document.getElementById('sizeval').textContent = size;
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  const lines = document.getElementById('titles').value.split('\n').map(s => s.trim()).filter(Boolean);
+  for (const line of lines) {
+    const s = parseLine(line);
+    const color = colorFor(s.title, s.kind, colorsrc);
+
+    const head = document.createElement('div');
+    head.className = 'head';
+
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = KIND_COLOR[s.kind] || '#7ee787';
+    dot.style.boxShadow = '0 0 7px ' + (KIND_COLOR[s.kind] || '#7ee787');
+    head.appendChild(dot);
+
+    let icon;
+    if (variant === 'identicon')      icon = identicon(s.title, color, size, false, s.title);
+    else if (variant === 'identicon-mono') icon = identicon(s.title, color, size, true, s.title);
+    else if (variant === 'lucide-keyword')  icon = lucideIcon(keywordIcon(s.title, s.cwd), color, size);
+    else                              icon = lucideIcon(aiIcon(s.title, s.cwd), color, size);
+    head.appendChild(icon);
+
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = s.title;
+    head.appendChild(name);
+
+    const cwd = document.createElement('span');
+    cwd.className = 'cwd';
+    cwd.textContent = s.cwd;
+    head.appendChild(cwd);
+
+    grid.appendChild(head);
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+document.querySelectorAll('input[name=variant], input[name=colorsrc]').forEach(el => el.addEventListener('change', render));
+document.getElementById('size').addEventListener('input', render);
+document.getElementById('titles').addEventListener('input', render);
+window.addEventListener('load', render);
+render();
+</script>
+</body>
+</html>

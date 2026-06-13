@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtualenvs / test envs
+.venv/
+.venv-test/
+venv/
+
+# Playwright / browser test scratch
+.playwright-mcp/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local dashboard runtime state (never commit)
+.claude/settings.local.json
+.vibe-drops/
+*.hook-token
+
+# Per-user launcher / provider config (lives in ~/.config/session-dashboard/,
+# but ignore here too so a local copy is never committed — may hold GCP project
+# ids, custom endpoints, API base URLs, etc.)
+launchers.json
+vertex.json
+.config/
+
+# Generated chat-history export (CHAT_HISTORY_DIR / OUT_ROOT output)
+claude-chat-history/
+
+# Rust native client (not part of this repo)
+native/
