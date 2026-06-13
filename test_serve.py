@@ -1007,7 +1007,7 @@ class NewTileKindsTest(unittest.TestCase):
     def test_fork_copies_and_rewrites_session_id(self):
         # The real test: fork must produce a NEW jsonl with the sessionId
         # rewritten to a fresh UUID. We block the subprocess.Popen so the
-        # in-process test doesn't actually try to spawn claude-unsafe.
+        # in-process test doesn't actually try to spawn the host launcher.
         d, projects = self._stage_projects_for_host()
         old = "11111111-1111-1111-1111-111111111111"
         jsonl = os.path.join(projects, old + ".jsonl")
@@ -1015,7 +1015,7 @@ class NewTileKindsTest(unittest.TestCase):
             f.write('{"type":"mode","sessionId":"' + old + '"}\n')
             f.write('{"type":"msg","sessionId":"' + old + '","text":"hi"}\n')
         self._write_host("host-99", port=1, cwd=d)
-        # Stub Popen — fork_session would otherwise try to launch claude-unsafe.
+        # Stub Popen — fork_session would otherwise try to launch the host launcher.
         calls = []
         orig = serve.subprocess.Popen
         serve.subprocess.Popen = lambda *a, **kw: calls.append((a, kw)) or _FakeProc()
@@ -1130,7 +1130,7 @@ class NewTileKindsTest(unittest.TestCase):
     def test_spawn_claude_writes_kind_host(self):
         # spawn_claude self-manages ttyd+dtach+registry (mirrors spawn_opencode)
         # and registers a kind=host tile in THIS store, so it honours
-        # --sessions-dir instead of delegating to the claude-unsafe zsh function
+        # --sessions-dir instead of delegating to the the host launcher zsh function
         # (which hardcodes ~/.claude-sessions). Verifies the registry shape.
         cwd = tempfile.mkdtemp(prefix="serve-claude-cwd-")
         self._tmpdirs.append(cwd)
@@ -1364,7 +1364,7 @@ class NewTileKindsTest(unittest.TestCase):
         self.assertEqual([f for f in os.listdir(self.reg) if f.startswith("host-")], [])
 
     def test_spawn_claude_returns_none_on_bad_cwd(self):
-        # A non-existent cwd returns None (unlike the old claude-unsafe path that
+        # A non-existent cwd returns None (unlike the old the host launcher path that
         # fell back to $HOME): the new self-managed launcher needs a real cwd to
         # bind-mount nothing but to anchor the session + its .mcp.json discovery.
         self.assertIsNone(serve.spawn_claude(cwd="/does/not/exist"))
@@ -2337,7 +2337,7 @@ class SaveDroppedFileTest(unittest.TestCase):
             "saved file must live under cwd/.vibe-drops")
 
     def test_container_session_returns_workspace_path(self):
-        # kind=container → claude-box. The container sees the session's host
+        # kind=container → the container launcher. The container sees the session's host
         # cwd as /workspace, so the path the shell uses is /workspace/...
         # NOT the host absolute path (which doesn't exist inside the box).
         self._write_session("box-1", kind="container")
@@ -2353,7 +2353,7 @@ class SaveDroppedFileTest(unittest.TestCase):
 
     def test_terminal_in_container_returns_workspace_path(self):
         # "Terminal in container" tiles are kind=terminal + container=true.
-        # They run a shell inside the same claude-box, so the path
+        # They run a shell inside the same the container launcher, so the path
         # translation must apply to them too — easy to miss since `kind`
         # alone says "terminal" (host kind).
         self._write_session("ct-1", kind="terminal", container=True)
@@ -7368,11 +7368,11 @@ class ResurrectTest(unittest.TestCase):
         self.assertNotIn("/fake/dtach", cmd)   # …bare, matching spawn_terminal
 
     def test_container_claude_relaunches_via_launcher(self):
-        # claude-box owns container bring-up; the launcher self-registers a
+        # the container launcher owns container bring-up; the launcher self-registers a
         # NEW tile, so the stale entry must be removed (not left to linger —
         # a stashed one would otherwise sit there dead forever).
         uuid = "55555555-5555-5555-5555-555555555555"
-        launcher = os.path.join(self.cwd, "claude-box")
+        launcher = os.path.join(self.cwd, "host-launcher")
         with open(launcher, "w") as f:
             f.write("#!/bin/sh\n")
         path = self._write("container-1", kind="container", port=self._dead_port(),

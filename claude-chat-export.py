@@ -3,7 +3,7 @@ import json, os, re, glob, datetime, collections
 
 PROJECTS_ROOT = os.environ.get("CLAUDE_PROJECTS_ROOT") or os.path.expanduser("~/.claude/projects")
 OUT_ROOT = os.environ.get("CHAT_HISTORY_DIR") or os.path.expanduser("~/claude-chat-history")
-# Sandboxed claude (claude-box) writes transcripts to <project>/.claude/projects
+# Sandboxed claude (the container launcher) writes transcripts to <project>/.claude/projects
 # instead of PROJECTS_ROOT. This registry holds one symlink per sandboxed
 # project, pointing at its .claude dir, so those sessions are discoverable.
 CONTAINERS_ROOT = os.environ.get("CLAUDE_CONTAINERS_ROOT") or ""

@@ -151,7 +151,7 @@ Omit the `DASHBOARD_BASE` line to serve at the origin root.
 
 > **Failed spawns are silent.** `+New → Claude/opencode/Terminal-in-container`
 > calls `POST /api/new`, which returns **500 `{"ok":false}`** when the binary
-> isn't found (or podman/claude-box isn't set up) — and the frontend shows **no
+> isn't found (or podman/the container launcher isn't set up) — and the frontend shows **no
 > error**, so it just looks like nothing happened. If a tile doesn't appear,
 > check the binary is on the service PATH (`sudo -u dashuser env PATH=… which claude`)
 > and watch `journalctl -u session-dashboard`.
@@ -294,7 +294,7 @@ A full browser pass over every tile type surfaced these (all addressed):
   `~/.local/bin`, so `_which("claude")` found nothing and the spawn 500'd with no
   UI feedback. Fixed by adding `~/.local/bin` (and `/snap/bin`) to the unit PATH.
   Same applies to `opencode` (must be installed + on PATH) and
-  *Terminal-in-container* (needs podman + claude-box).
+  *Terminal-in-container* (needs podman + the container launcher).
 - **Closing a tile orphaned its `ttyd`** — `close_session` finds the pid via
   `lsof`, which wasn't installed. Fixed by `apt install lsof` (see §2).
 - **Service restart killed every live session** — default `KillMode` is

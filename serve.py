@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Claude Sessions dashboard.
 
-Shows every active claude session side-by-side as embedded ttyd web TTYs:
-  - host  : `claude-unsafe -web` sessions
-  - container : `claude-box` sessions (exposed via a host-side ttyd)
+Shows every active agent/terminal session side-by-side as embedded ttyd web TTYs:
+  - host  : a claude/codex/opencode (or custom) session run directly on the host
+  - container : a session running inside a container, exposed via a host-side ttyd
 
 Sessions self-register by dropping a small JSON file in ~/.claude-sessions/:
   {"name": "...", "port": 7681, "kind": "host"|"container", "cwd": "...",
@@ -221,6 +221,13 @@ DEFAULT_LAUNCHERS = [
      "command": "codex --dangerously-bypass-approvals-and-sandbox"},
     {"id": "opencode", "label": "opencode", "command": "opencode"},
 ]
+# Command used to relaunch a legacy kind=host tile that has no recorded launcher
+# command — i.e. a session started OUTSIDE the "+ New" menu (e.g. an external
+# wrapper that self-registers a web tile). Modern tiles spawned from "+ New"
+# carry their own command and ignore this. Empty by default: with no recorded
+# command and no override here, host relaunch/fork simply bails. Set it to your
+# external web launcher (e.g. "mywrapper -web") to re-enable that path.
+HOST_LAUNCH_CMD = os.environ.get("HOST_LAUNCH_CMD", "")
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -741,7 +748,7 @@ def _tile_jsonl(sid):
     kind = s.get("kind", "host")
     container = (kind == "container") or bool(s.get("container"))
     # host/container claude tiles have a transcript; a kind=terminal tile only
-    # does when it's the shell of a claude-box container (container flag set).
+    # does when it's the shell of a the container launcher container (container flag set).
     if kind not in ("host", "container") and not container:
         return None
     cwd = s.get("cwd")
@@ -1545,8 +1552,13 @@ def fork_session(sid):
             return False
         cmd = [launcher, "-web", "--detach", "--resume", new_uuid]
     else:
+        # Host tiles relaunch via their recorded launcher command, or the
+        # configured HOST_LAUNCH_CMD for legacy tiles with no recorded command.
+        base = s.get("command") or HOST_LAUNCH_CMD
+        if not base:
+            return False
         cmd = ["zsh", "-ic",
-               "claude-unsafe -web --detach --resume " + shlex.quote(new_uuid)]
+               base + " --detach --resume " + shlex.quote(new_uuid)]
     try:
         subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -1602,9 +1614,9 @@ def save_dropped_file(sid, name, data):
     except OSError:
         return None
     kind = s.get("kind")
-    # claude-box binds the session's cwd as /workspace inside the container,
+    # the container launcher binds the session's cwd as /workspace inside the container,
     # so a container shell must reference the file by its CONTAINER path.
-    # Two kinds use the container: top-level `claude-box -web` (kind=container)
+    # Two kinds use the container: top-level `the container launcher -web` (kind=container)
     # and the "Terminal in container" tiles (kind=terminal + container=true).
     in_container = kind == "container" or (kind == "terminal" and s.get("container"))
     if in_container:
@@ -1628,7 +1640,7 @@ def duplicate_session(sid):
         # No subprocess — just clone the registry entry with a fresh id.
         return bool(create_webview(s.get("url", ""), s.get("name")))
     if kind == "terminal":
-        # If this terminal lives inside a claude-box container, dup another
+        # If this terminal lives inside a the container launcher container, dup another
         # of the same kind; otherwise a plain host terminal in the same cwd.
         if s.get("container"):
             return bool(spawn_container_terminal(cwd=s.get("cwd") or None, name=s.get("name")))
@@ -1658,9 +1670,13 @@ def duplicate_session(sid):
             return False
         cmd = [launcher, "-web", "--detach"]
     else:
-        # claude-unsafe is a zsh function from ~/.zshrc, so load it via an
-        # interactive zsh; cwd (hence the session's workdir) comes from Popen.
-        cmd = ["zsh", "-ic", "claude-unsafe -web --detach"]
+        # Legacy host tile with no recorded command: relaunch via the configured
+        # external web launcher (loaded through an interactive zsh so a shell
+        # function works); bail if none is configured. cwd comes from Popen.
+        base = s.get("command") or HOST_LAUNCH_CMD
+        if not base:
+            return False
+        cmd = ["zsh", "-ic", base + " --detach"]
     try:
         subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -1900,8 +1916,8 @@ def _mcp_project_dir():
 def spawn_claude(cwd=None, name=None, provider=None, extra=None, command=None, env=None):
     """Spawn a ttyd serving a host `claude` session in `cwd` and register it as a
     kind=host tile in THIS dashboard's store. Self-manages ttyd + dtach + term.html
-    + registry (mirrors spawn_opencode) rather than delegating to the claude-unsafe
-    zsh function — so it honours --sessions-dir (claude-unsafe hardcodes
+    + registry (mirrors spawn_opencode) rather than delegating to the the host launcher
+    zsh function — so it honours --sessions-dir (the host launcher hardcodes
     ~/.claude-sessions) and survives reloads. cwd defaults to the nearest .mcp.json
     project so the spawned claude has the same MCP servers (show_image).
 
@@ -2294,15 +2310,15 @@ def spawn_launcher(preset, cwd=None, name=None):
 
 
 def spawn_container_terminal(cwd=None, name=None):
-    """Spawn a ttyd that drops into zsh INSIDE the claude-box podman container
-    for `cwd`. Mirrors the claude-box -web pattern: ttyd wraps `podman exec
+    """Spawn a ttyd that drops into zsh INSIDE the the container launcher podman container
+    for `cwd`. Mirrors the the container launcher -web pattern: ttyd wraps `podman exec
     -it <ctr> dtach -A <csock> -r winch /bin/zsh -i` so the in-container shell
     is reachable via the dashboard tile.
 
-    Requires an existing (running) claude-box container for this cwd — we
+    Requires an existing (running) the container launcher container for this cwd — we
     don't replicate the full `devcontainer up` bring-up here (it lives in
-    claude-box and does Keychain import, hash-based auto-rebuild, etc.).
-    User can launch `claude-box -web` first, then add this terminal alongside
+    the container launcher and does Keychain import, hash-based auto-rebuild, etc.).
+    User can launch `the container launcher -web` first, then add this terminal alongside
     their claude session in the same container.
 
     Returns sid on success, None otherwise."""
@@ -2314,13 +2330,13 @@ def spawn_container_terminal(cwd=None, name=None):
     podman = _which("podman")
     if not podman:
         return None
-    # Pick the NEWEST running container for this cwd. Two claude-box launches
+    # Pick the NEWEST running container for this cwd. Two the container launcher launches
     # from different paths that resolve to the same workspace (e.g. via
     # symlink, or rerunning after the .devcontainer changed without removing
     # the old one) leave both labelled with the same local_folder. The old one
     # may predate Dockerfile changes (e.g. before `dtach` was added) — picking
     # it would land us in a shell-less container and confuse the user. Newest
-    # is what `claude-box -web` will have just (re)started.
+    # is what `the container launcher -web` will have just (re)started.
     try:
         out = subprocess.run(
             [podman, "ps", "--format", "{{.CreatedAt}}\t{{.ID}}",
@@ -2450,8 +2466,8 @@ def _revive_entry(sid, s):
       terminal   a fresh interactive shell in the recorded cwd (a shell has
                  no resumable state). In-container shells are NOT revived:
                  their container is stopped after a reboot and bring-up
-                 belongs to claude-box (see kind=container).
-      container  relaunched detached via the recorded claude-box launcher
+                 belongs to the container launcher (see kind=container).
+      container  relaunched detached via the recorded the container launcher launcher
                  with --resume <session_id>; the launcher owns the container
                  bring-up (podman machine start, devcontainer up, ...) and
                  self-registers a NEW tile, so the stale entry is removed
@@ -2506,7 +2522,7 @@ def _revive_entry(sid, s):
             if src:
                 session_id = os.path.basename(src)[: -len(".jsonl")]
         # A launcher-spawned tile replays its exact flags; a legacy tile (no
-        # recorded command — e.g. spawned by `claude-unsafe -web`, which always
+        # recorded command — e.g. spawned by `the host launcher -web`, which always
         # uses --dangerously-skip-permissions) defaults to skip-perms so it comes
         # back in the same mode it had before the reboot.
         if s.get("command"):
@@ -4031,7 +4047,7 @@ __FONT_FACE__
 <div id="grid"></div>
 <div class="empty" id="empty" hidden>
   <div>No active sessions.</div>
-  <div class="muted">Start one with <code>claude-unsafe -web</code> or <code>claude-box</code>.</div>
+  <div class="muted">Start one from the <strong>+ New</strong> menu above.</div>
 </div>
 <script>
 const CSRF = document.querySelector('meta[name=csrf-token]').content;
@@ -5204,8 +5220,8 @@ function placeNewInOrder(s) {
   pendingDups = pendingDups.filter(p => p.until > now);
   // Match the spawned session to the placeholder we're holding for it. cwd is
   // the obvious key, but the spawned session's RECORDED cwd often isn't a byte
-  // match for the source's: claude-unsafe writes $PWD (symlink-resolved by the
-  // fresh shell), claude-box writes its own WORKSPACE path, and trailing
+  // match for the source's: the host launcher writes $PWD (symlink-resolved by the
+  // fresh shell), the container launcher writes its own WORKSPACE path, and trailing
   // slashes creep in — so an exact compare misses and the clone drifts to the
   // right of its group. Compare with trailing slashes stripped, and, failing
   // that, fall back to the SOLE in-flight placeholder: if exactly one dup is
